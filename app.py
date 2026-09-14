@@ -13,6 +13,11 @@ nothing here is simulated or hardcoded):
     KPI row, exportable defect log).
   - CSV export of the full session log, alongside the original text report.
   - Grad-CAM overlay now carries an explicit "approximate region" disclaimer.
+
+v3.1 (styling-only update):
+  - Swapped the rainbow glassmorphism theme for a dark charcoal industrial
+    palette (red/green/amber status colors), and added a simple line-art
+    screw icon to the header. No logic, features, or page structure changed.
 """
 
 import streamlit as st
@@ -27,12 +32,31 @@ from predict import load_model, predict_image, get_gradcam_overlay, get_defect_b
 st.set_page_config(
     page_title="BoltGuard AI — Screw Defect Detector",
     layout="wide",
-    page_icon="🛡️",
+    page_icon="🔩",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------------------------
-# Styling — dark glassmorphism theme with animated accents
+# Simple line-art screw icon (self-drawn SVG, no external image dependency)
+# ---------------------------------------------------------------------------
+SCREW_ICON_SVG = """
+<svg width="56" height="56" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#f5a623" stroke-width="2.2" stroke-linecap="round">
+    <rect x="14" y="4" width="28" height="10" rx="2" fill="#2a2a2e" />
+    <line x1="19" y1="4" x2="19" y2="14" stroke="#3a3a3f" stroke-width="1.4" />
+    <line x1="25" y1="4" x2="25" y2="14" stroke="#3a3a3f" stroke-width="1.4" />
+    <line x1="31" y1="4" x2="31" y2="14" stroke="#3a3a3f" stroke-width="1.4" />
+    <line x1="37" y1="4" x2="37" y2="14" stroke="#3a3a3f" stroke-width="1.4" />
+    <line x1="20" y1="9" x2="36" y2="9" stroke="#f5a623" stroke-width="2" />
+    <line x1="28" y1="14" x2="28" y2="48" stroke="#f5a623" stroke-width="3" />
+    <path d="M 28 16 L 34 20 L 28 24 L 34 28 L 28 32 L 34 36 L 28 40 L 34 44 L 28 48"
+          stroke="#c77c0e" stroke-width="2" />
+  </g>
+</svg>
+"""
+
+# ---------------------------------------------------------------------------
+# Styling — dark charcoal industrial theme, red/green/amber status colors
 # ---------------------------------------------------------------------------
 st.markdown(
     """
@@ -44,104 +68,100 @@ st.markdown(
         }
 
         .main {
-            background: radial-gradient(circle at 20% 0%, #14213d 0%, #0a0e17 45%, #05070d 100%);
+            background: radial-gradient(circle at 20% 0%, #232326 0%, #17171a 45%, #0e0e10 100%);
         }
 
-        @keyframes gradientShift {
-            0%   { background-position: 0% 50%; }
-            50%  { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
         .app-header {
             position: relative;
-            padding: 2.2rem 2.5rem;
-            border-radius: 20px;
-            background: linear-gradient(120deg, #ff6b6b, #f7b733, #4ecdc4, #556fb5, #ff6b6b);
-            background-size: 300% 300%;
-            animation: gradientShift 12s ease infinite;
+            display: flex;
+            align-items: center;
+            gap: 1.4rem;
+            padding: 1.8rem 2.4rem;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #232326, #18181b);
+            border-left: 5px solid #f5a623;
             margin-bottom: 1.8rem;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.45);
-            overflow: hidden;
+            box-shadow: 0 8px 26px rgba(0,0,0,0.5);
         }
-        .app-header::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: rgba(5, 7, 13, 0.45);
-        }
-        .app-header * { position: relative; z-index: 1; }
         .app-header .eyebrow {
             display: inline-block;
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.72rem;
             letter-spacing: 0.18em;
             text-transform: uppercase;
-            color: #ffe66d;
-            background: rgba(0,0,0,0.35);
+            color: #f5a623;
+            background: rgba(245, 166, 35, 0.12);
             padding: 0.25rem 0.7rem;
             border-radius: 999px;
-            margin-bottom: 0.7rem;
+            margin-bottom: 0.6rem;
         }
         .app-header h1 {
-            color: #ffffff;
-            margin: 0 0 0.4rem 0;
-            font-size: 2.4rem;
+            color: #f4f4f5;
+            margin: 0 0 0.35rem 0;
+            font-size: 2.2rem;
             font-weight: 700;
             letter-spacing: -0.02em;
         }
         .app-header p {
-            color: #f1f5ff;
+            color: #b8b8bd;
             margin-bottom: 0;
-            font-size: 1.05rem;
+            font-size: 1.0rem;
             max-width: 640px;
+        }
+        .app-header .icon-box {
+            flex-shrink: 0;
+            width: 64px;
+            height: 64px;
+            border-radius: 12px;
+            background: #1c1c1f;
+            border: 1px solid rgba(245, 166, 35, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         div[data-testid="stMetric"] {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 14px;
+            background: #1c1c1f;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
             padding: 0.8rem 1rem;
-            transition: transform 0.15s ease;
-        }
-        div[data-testid="stMetric"]:hover {
-            transform: scale(1.03);
         }
         div[data-testid="stMetricValue"] {
             font-family: 'JetBrains Mono', monospace;
+            color: #f4f4f5;
         }
 
         .feed-card {
-            border-radius: 16px;
+            border-radius: 14px;
             padding: 0.9rem;
             margin-bottom: 1rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.10);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            background: #1c1c1f;
+            border: 1px solid rgba(255,255,255,0.06);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
         .feed-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
         }
         .feed-card.good {
-            background: linear-gradient(135deg, rgba(46, 204, 113, 0.14), rgba(46, 204, 113, 0.04));
             border-left: 4px solid #2ecc71;
         }
         .feed-card.defective {
-            background: linear-gradient(135deg, rgba(255, 82, 82, 0.16), rgba(255, 82, 82, 0.05));
-            border-left: 4px solid #ff5252;
+            border-left: 4px solid #e74c3c;
         }
         .feed-card .fname {
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.72rem;
-            opacity: 0.65;
+            opacity: 0.55;
+            color: #d0d0d5;
             margin-top: 0.4rem;
             word-break: break-all;
         }
 
         @keyframes pulseGlow {
-            0%   { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.55); }
-            70%  { box-shadow: 0 0 0 9px rgba(255, 82, 82, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+            0%   { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.5); }
+            70%  { box-shadow: 0 0 0 8px rgba(231, 76, 60, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
         }
         .badge {
             display: inline-block;
@@ -154,19 +174,22 @@ st.markdown(
             font-family: 'JetBrains Mono', monospace;
         }
         .badge.good {
-            background: linear-gradient(135deg, #2ecc71, #1abc9c);
-            color: #052e1c;
+            background: rgba(46, 204, 113, 0.15);
+            color: #2ecc71;
+            border: 1px solid rgba(46, 204, 113, 0.4);
         }
         .badge.defective {
-            background: linear-gradient(135deg, #ff5252, #ff1744);
-            color: #2b0006;
+            background: rgba(231, 76, 60, 0.15);
+            color: #ff6b5f;
+            border: 1px solid rgba(231, 76, 60, 0.4);
             animation: pulseGlow 2s infinite;
         }
 
         .disclaimer {
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.68rem;
-            opacity: 0.6;
+            opacity: 0.55;
+            color: #d0d0d5;
             margin-top: 0.3rem;
         }
 
@@ -175,27 +198,24 @@ st.markdown(
             font-size: 1.0rem;
             font-weight: 600;
             padding: 0.6rem 1.2rem;
-            border-radius: 12px 12px 0 0;
-            background: rgba(255,255,255,0.03);
+            border-radius: 10px 10px 0 0;
+            background: #1c1c1f;
+            color: #b8b8bd;
         }
         .stTabs [aria-selected="true"] {
-            background: rgba(255,255,255,0.09) !important;
-            color: #ffe66d !important;
+            background: rgba(245, 166, 35, 0.12) !important;
+            color: #f5a623 !important;
         }
 
         div[data-testid="stImage"] img {
-            border-radius: 12px;
-            transition: transform 0.25s ease;
-        }
-        div[data-testid="stImage"] img:hover {
-            transform: scale(1.02);
+            border-radius: 10px;
         }
 
         .footer-tag {
             text-align: center;
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.78rem;
-            color: rgba(255,255,255,0.35);
+            color: rgba(255,255,255,0.28);
             margin-top: 2.5rem;
             letter-spacing: 0.04em;
         }
@@ -205,19 +225,22 @@ st.markdown(
 )
 
 st.markdown(
-    """
+    f"""
     <div class="app-header">
-        <span class="eyebrow">⚡ AI-Powered Visual Inspection</span>
-        <h1>🛡️ BoltGuard AI</h1>
-        <p>Screws lie. Pixels don't. Upload a batch or catch a live shot —
-        BoltGuard flags the flaw and shows you exactly where it's looking.</p>
+        <div class="icon-box">{SCREW_ICON_SVG}</div>
+        <div>
+            <span class="eyebrow">⚡ AI-Powered Visual Inspection</span>
+            <h1>BoltGuard AI</h1>
+            <p>Screws lie. Pixels don't. Upload a batch or catch a live shot —
+            BoltGuard flags the flaw and shows you exactly where it's looking.</p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 with st.sidebar:
-    st.markdown("### 🛡️ BoltGuard Console")
+    st.markdown("### 🔩 BoltGuard Console")
     st.write("**Architecture:** ResNet18 (transfer learning)")
     st.write("**Test Accuracy:** ~87%")
     st.write("**Recall on defects:** ~88%")
@@ -337,7 +360,7 @@ def render_feed_grid(results, columns_per_row=3):
                 st.markdown(
                     f"""
                     <span class="badge {css_class}">{badge_label}</span>
-                    <div style="margin-top:0.4rem; font-family:'JetBrains Mono',monospace;">
+                    <div style="margin-top:0.4rem; font-family:'JetBrains Mono',monospace; color:#d0d0d5;">
                         {r['confidence']:.1f}% confidence
                     </div>
                     <div class="fname">{r['filename']} · {r['source']}</div>
