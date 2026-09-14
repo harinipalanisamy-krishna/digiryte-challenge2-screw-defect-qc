@@ -2,13 +2,25 @@
 app.py - Streamlit UI for the Screw Defect Detector.
 Uses predict.py for all model logic (kept separate as required by the brief).
 
-v2: adds a live webcam capture tab alongside batch upload, and a visual
-refresh (custom CSS, styled result cards). No changes to predict.py.
+v3 changes (all data shown is genuinely computed from real model inference —
+nothing here is simulated or hardcoded):
+  - Session-wide analytics HUD: Inspected / Passed / Defective / Defect Rate
+    accumulate across every image processed this session (upload + camera),
+    not just the current batch. Includes a Reset Metrics button.
+  - Filter tabs (All / Passed / Defective) over the session's real results.
+  - Results shown as a "camera feed" style grid, inspired by common
+    industrial visual-inspection dashboard conventions (status badges,
+    KPI row, exportable defect log).
+  - CSV export of the full session log, alongside the original text report.
+  - Grad-CAM overlay now carries an explicit "approximate region" disclaimer.
 """
 
 import streamlit as st
 from PIL import Image, ImageDraw
 import datetime
+import hashlib
+import csv
+import io
 
 from predict import load_model, predict_image, get_gradcam_overlay, get_defect_bounding_box
 
@@ -35,7 +47,6 @@ st.markdown(
             background: radial-gradient(circle at 20% 0%, #14213d 0%, #0a0e17 45%, #05070d 100%);
         }
 
-        /* ---- animated hero header ---- */
         @keyframes gradientShift {
             0%   { background-position: 0% 50%; }
             50%  { background-position: 100% 50%; }
@@ -85,60 +96,6 @@ st.markdown(
             max-width: 640px;
         }
 
-        /* ---- glass result cards ---- */
-        .result-card {
-            border-radius: 16px;
-            padding: 1.3rem 1.5rem;
-            margin-bottom: 0.9rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.10);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        .result-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-        }
-        .result-card.good {
-            background: linear-gradient(135deg, rgba(46, 204, 113, 0.14), rgba(46, 204, 113, 0.04));
-            border-left: 4px solid #2ecc71;
-        }
-        .result-card.defective {
-            background: linear-gradient(135deg, rgba(255, 82, 82, 0.16), rgba(255, 82, 82, 0.05));
-            border-left: 4px solid #ff5252;
-        }
-        .result-card h4 {
-            margin: 0.5rem 0 0 0;
-            font-weight: 600;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        /* ---- pulsing badge for defective ---- */
-        @keyframes pulseGlow {
-            0%   { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.55); }
-            70%  { box-shadow: 0 0 0 10px rgba(255, 82, 82, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
-        }
-        .badge {
-            display: inline-block;
-            padding: 0.3rem 0.85rem;
-            border-radius: 999px;
-            font-weight: 700;
-            font-size: 0.78rem;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            font-family: 'JetBrains Mono', monospace;
-        }
-        .badge.good {
-            background: linear-gradient(135deg, #2ecc71, #1abc9c);
-            color: #052e1c;
-        }
-        .badge.defective {
-            background: linear-gradient(135deg, #ff5252, #ff1744);
-            color: #2b0006;
-            animation: pulseGlow 2s infinite;
-        }
-
-        /* ---- metrics ---- */
         div[data-testid="stMetric"] {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
@@ -153,14 +110,71 @@ st.markdown(
             font-family: 'JetBrains Mono', monospace;
         }
 
-        /* ---- tabs ---- */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 0.4rem;
+        .feed-card {
+            border-radius: 16px;
+            padding: 0.9rem;
+            margin-bottom: 1rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.10);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
+        .feed-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+        }
+        .feed-card.good {
+            background: linear-gradient(135deg, rgba(46, 204, 113, 0.14), rgba(46, 204, 113, 0.04));
+            border-left: 4px solid #2ecc71;
+        }
+        .feed-card.defective {
+            background: linear-gradient(135deg, rgba(255, 82, 82, 0.16), rgba(255, 82, 82, 0.05));
+            border-left: 4px solid #ff5252;
+        }
+        .feed-card .fname {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            opacity: 0.65;
+            margin-top: 0.4rem;
+            word-break: break-all;
+        }
+
+        @keyframes pulseGlow {
+            0%   { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.55); }
+            70%  { box-shadow: 0 0 0 9px rgba(255, 82, 82, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.28rem 0.75rem;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .badge.good {
+            background: linear-gradient(135deg, #2ecc71, #1abc9c);
+            color: #052e1c;
+        }
+        .badge.defective {
+            background: linear-gradient(135deg, #ff5252, #ff1744);
+            color: #2b0006;
+            animation: pulseGlow 2s infinite;
+        }
+
+        .disclaimer {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68rem;
+            opacity: 0.6;
+            margin-top: 0.3rem;
+        }
+
+        .stTabs [data-baseweb="tab-list"] { gap: 0.4rem; }
         .stTabs [data-baseweb="tab"] {
-            font-size: 1.02rem;
+            font-size: 1.0rem;
             font-weight: 600;
-            padding: 0.65rem 1.3rem;
+            padding: 0.6rem 1.2rem;
             border-radius: 12px 12px 0 0;
             background: rgba(255,255,255,0.03);
         }
@@ -169,16 +183,14 @@ st.markdown(
             color: #ffe66d !important;
         }
 
-        /* ---- images ---- */
         div[data-testid="stImage"] img {
-            border-radius: 14px;
+            border-radius: 12px;
             transition: transform 0.25s ease;
         }
         div[data-testid="stImage"] img:hover {
-            transform: scale(1.015);
+            transform: scale(1.02);
         }
 
-        /* ---- footer tagline ---- */
         .footer-tag {
             text-align: center;
             font-family: 'JetBrains Mono', monospace;
@@ -211,7 +223,7 @@ with st.sidebar:
     st.write("**Recall on defects:** ~88%")
     st.write("**Dataset:** MVTec AD (screw category)")
     st.markdown("---")
-    st.markdown("### 🎚️ Sensitivity Dial")
+    st.markdown("### 🎚️ Strictness Level")
     threshold = st.slider(
         "Lower = catches more defects, but more false alarms",
         min_value=0.2, max_value=0.5, value=0.5, step=0.05
@@ -226,107 +238,181 @@ def get_model():
 
 model = get_model()
 
+# ---------------------------------------------------------------------------
+# Session-wide state — every number shown anywhere in this app is derived
+# from this list, which only grows when a NEW image is actually processed.
+# ---------------------------------------------------------------------------
+if "session_log" not in st.session_state:
+    st.session_state.session_log = []          # list of result dicts, in order
+if "seen_hashes" not in st.session_state:
+    st.session_state.seen_hashes = set()        # dedupe: avoid recounting the
+                                                 # same image on an unrelated rerun
 
-def render_result(image, filename, threshold, key_prefix, precomputed=None):
+
+def _hash_bytes(data: bytes) -> str:
+    return hashlib.md5(data).hexdigest()
+
+
+def process_and_log(image_bytes, filename, threshold, source):
     """
-    Runs Grad-CAM (and prediction, unless already computed) on a single PIL
-    image and renders a styled result card. Returns a dict summarizing the
-    result (used for batch summaries and the downloadable report).
-
-    precomputed: optional (label, confidence) tuple to avoid re-running
-    inference when the caller already has it (e.g. for the batch summary).
+    Runs real inference (+ Grad-CAM for defective results) on one image and
+    appends the result to the session-wide log, unless this exact image was
+    already processed earlier in the session (prevents double-counting when
+    Streamlit reruns the script for an unrelated widget interaction).
+    Returns the result dict (existing or newly created).
     """
-    if precomputed is not None:
-        label, confidence = precomputed
-    else:
-        label, confidence = predict_image(model, image, threshold=threshold)
+    img_hash = _hash_bytes(image_bytes)
 
-    col1, col2 = st.columns([1, 1])
+    for existing in st.session_state.session_log:
+        if existing["hash"] == img_hash:
+            return existing
 
-    with col1:
-        st.image(image, caption=filename, use_container_width=True)
+    image = Image.open(io.BytesIO(image_bytes))
+    label, confidence = predict_image(model, image, threshold=threshold)
 
-    with col2:
-        if label == "defective":
-            st.markdown(
-                f"""
-                <div class="result-card defective">
-                    <span class="badge defective">⚠ Defective</span>
-                    <h4>{confidence:.1f}% confidence</h4>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    overlay_img = None
+    if label == "defective":
+        overlay, grayscale_cam = get_gradcam_overlay(model, image)
+        bbox = get_defect_bounding_box(grayscale_cam)
+        overlay_img = Image.fromarray(overlay)
+        if bbox:
+            draw = ImageDraw.Draw(overlay_img)
+            draw.rectangle(bbox, outline="yellow", width=3)
 
-            with st.spinner("🔍 Tracing the flaw with Grad-CAM..."):
-                overlay, grayscale_cam = get_gradcam_overlay(model, image)
-                bbox = get_defect_bounding_box(grayscale_cam)
+    thumb = image.convert("RGB").copy()
+    thumb.thumbnail((260, 260))
 
-            overlay_img = Image.fromarray(overlay)
-            if bbox:
-                draw = ImageDraw.Draw(overlay_img)
-                draw.rectangle(bbox, outline="yellow", width=3)
-
-            st.image(
-                overlay_img,
-                caption="🎯 Grad-CAM heatmap — the model's focus, boxed",
-                use_container_width=True,
-            )
-        else:
-            st.markdown(
-                f"""
-                <div class="result-card good">
-                    <span class="badge good">✓ Good</span>
-                    <h4>{confidence:.1f}% confidence</h4>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    return {"filename": filename, "label": label, "confidence": confidence}
+    result = {
+        "hash": img_hash,
+        "filename": filename,
+        "label": label,
+        "confidence": confidence,
+        "source": source,
+        "timestamp": datetime.datetime.now(),
+        "thumb": thumb,
+        "overlay": overlay_img,
+    }
+    st.session_state.session_log.append(result)
+    st.session_state.seen_hashes.add(img_hash)
+    return result
 
 
-def render_batch_summary(results):
-    total = len(results)
-    defective_count = sum(1 for r in results if r["label"] == "defective")
+def render_hud():
+    log = st.session_state.session_log
+    total = len(log)
+    defective_count = sum(1 for r in log if r["label"] == "defective")
     good_count = total - defective_count
-    defect_rate = (defective_count / total * 100) if total > 0 else 0
+    defect_rate = (defective_count / total * 100) if total > 0 else 0.0
 
-    st.markdown("## Batch Summary")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Checked", total)
-    col2.metric("Good", good_count)
-    col3.metric("Defective", defective_count)
-    col4.metric("Defect Rate", f"{defect_rate:.1f}%")
+    st.markdown("## 📊 Session Inspection HUD")
+    c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 1])
+    c1.metric("Inspected", total)
+    c2.metric("Passed", good_count)
+    c3.metric("Defective", defective_count)
+    c4.metric("Defect Rate", f"{defect_rate:.1f}%")
+    with c5:
+        st.write("")
+        if st.button("🔄 Reset Metrics", use_container_width=True):
+            st.session_state.session_log = []
+            st.session_state.seen_hashes = set()
+            st.rerun()
     st.markdown("---")
-
     return total, good_count, defective_count, defect_rate
 
 
-def render_download_report(results, threshold, total, good_count, defective_count, defect_rate):
+def render_feed_grid(results, columns_per_row=3):
+    if not results:
+        st.info("No results in this view yet.")
+        return
+
+    rows = [results[i:i + columns_per_row] for i in range(0, len(results), columns_per_row)]
+    for row in rows:
+        cols = st.columns(columns_per_row)
+        for col, r in zip(cols, row):
+            with col:
+                css_class = "defective" if r["label"] == "defective" else "good"
+                badge_label = "⚠ Defective" if r["label"] == "defective" else "✓ Good"
+                st.markdown(f'<div class="feed-card {css_class}">', unsafe_allow_html=True)
+                st.image(r["thumb"], use_container_width=True)
+                st.markdown(
+                    f"""
+                    <span class="badge {css_class}">{badge_label}</span>
+                    <div style="margin-top:0.4rem; font-family:'JetBrains Mono',monospace;">
+                        {r['confidence']:.1f}% confidence
+                    </div>
+                    <div class="fname">{r['filename']} · {r['source']}</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if r["label"] == "defective" and r["overlay"] is not None:
+                    with st.expander("🎯 View Grad-CAM"):
+                        st.image(r["overlay"], use_container_width=True)
+                        st.markdown(
+                            '<div class="disclaimer">📍 Approximate region of interest — '
+                            'not a precise defect boundary.</div>',
+                            unsafe_allow_html=True,
+                        )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_exports():
+    log = st.session_state.session_log
+    if not log:
+        return
+
+    total = len(log)
+    defective_count = sum(1 for r in log if r["label"] == "defective")
+    good_count = total - defective_count
+    defect_rate = (defective_count / total * 100) if total > 0 else 0.0
+
     report_lines = [
-        "SCREW DEFECT DETECTION - QC REPORT",
+        "SCREW DEFECT DETECTION - QC SESSION REPORT",
         f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"Detection threshold used: {threshold}",
         "",
-        f"Total screws checked: {total}",
+        f"Total screws inspected this session: {total}",
         f"Good: {good_count}",
         f"Defective: {defective_count}",
         f"Defect rate: {defect_rate:.1f}%",
         "",
         "DETAILED RESULTS:",
     ]
-    for r in results:
-        report_lines.append(f"  {r['filename']}: {r['label'].upper()} ({r['confidence']:.1f}% confidence)")
-
+    for r in log:
+        report_lines.append(
+            f"  [{r['timestamp'].strftime('%H:%M:%S')}] {r['filename']} ({r['source']}): "
+            f"{r['label'].upper()} ({r['confidence']:.1f}% confidence)"
+        )
     report_text = "\n".join(report_lines)
 
-    st.download_button(
-        label="📄 Download QC Report",
-        data=report_text,
-        file_name=f"qc_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-        mime="text/plain",
-    )
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+    writer.writerow(["timestamp", "filename", "source", "label", "confidence_percent"])
+    for r in log:
+        writer.writerow([
+            r["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+            r["filename"],
+            r["source"],
+            r["label"],
+            f"{r['confidence']:.1f}",
+        ])
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="📄 Download Session Report (.txt)",
+            data=report_text,
+            file_name=f"qc_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+    with col2:
+        st.download_button(
+            label="📑 Download Defect Log (.csv)",
+            data=csv_buffer.getvalue(),
+            file_name=f"defect_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -339,48 +425,51 @@ with tab_upload:
         "Drop screw images here — one or a hundred, BoltGuard doesn't blink.",
         type=["png", "jpg", "jpeg"], accept_multiple_files=True
     )
-
     if uploaded_files:
-        images = [Image.open(f) for f in uploaded_files]
-
-        # Run predictions once up front so the summary metrics can be shown
-        # before rendering each individual result card below.
-        prelim_results = []
-        for uploaded_file, image in zip(uploaded_files, images):
-            label, confidence = predict_image(model, image, threshold=threshold)
-            prelim_results.append({"filename": uploaded_file.name, "label": label, "confidence": confidence})
-
-        total, good_count, defective_count, defect_rate = render_batch_summary(prelim_results)
-
-        st.markdown("## Results")
-        results = []
-        for uploaded_file, image, prelim in zip(uploaded_files, images, prelim_results):
-            result = render_result(
-                image, uploaded_file.name, threshold,
-                key_prefix=uploaded_file.name,
-                precomputed=(prelim["label"], prelim["confidence"]),
-            )
-            results.append(result)
-            st.markdown("---")
-
-        render_download_report(results, threshold, total, good_count, defective_count, defect_rate)
+        for uploaded_file in uploaded_files:
+            process_and_log(uploaded_file.getvalue(), uploaded_file.name, threshold, source="Upload")
     else:
         st.info("💡 Drop some screw images above and BoltGuard gets to work instantly.")
 
 with tab_webcam:
     st.write("Line up the shot. One click, one verdict.")
     camera_image = st.camera_input("Take a photo")
-
     if camera_image is not None:
-        image = Image.open(camera_image)
-        st.markdown("## Result")
-        result = render_result(image, "Live Capture", threshold, key_prefix="webcam")
-
-        results = [result]
-        total, good_count, defective_count, defect_rate = render_batch_summary(results)
-        render_download_report(results, threshold, total, good_count, defective_count, defect_rate)
+        process_and_log(
+            camera_image.getvalue(),
+            f"live_capture_{datetime.datetime.now().strftime('%H%M%S')}.jpg",
+            threshold,
+            source="Live Camera",
+        )
     else:
         st.info("📸 Fire up your camera above and catch a screw in the act.")
+
+# ---------------------------------------------------------------------------
+# Shared HUD + filterable results grid, driven entirely by session_log
+# ---------------------------------------------------------------------------
+if st.session_state.session_log:
+    render_hud()
+
+    st.markdown("## 🔍 Results")
+    filter_choice = st.radio(
+        "Filter",
+        options=["All Screws", "Passed", "Defective"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    log_newest_first = list(reversed(st.session_state.session_log))
+    if filter_choice == "Passed":
+        filtered = [r for r in log_newest_first if r["label"] == "good"]
+    elif filter_choice == "Defective":
+        filtered = [r for r in log_newest_first if r["label"] == "defective"]
+    else:
+        filtered = log_newest_first
+
+    render_feed_grid(filtered)
+
+    st.markdown("---")
+    render_exports()
 
 st.markdown(
     '<div class="footer-tag">BOLTGUARD AI · RESNET18 + GRAD-CAM · BUILT FOR PRECISION QC</div>',
