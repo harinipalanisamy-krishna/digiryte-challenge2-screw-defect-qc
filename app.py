@@ -187,10 +187,14 @@ st.markdown(
 
         .disclaimer {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.68rem;
-            opacity: 0.55;
-            color: #d0d0d5;
-            margin-top: 0.3rem;
+            font-size: 0.72rem;
+            color: #f5a623;
+            background: rgba(245, 166, 35, 0.08);
+            border: 1px solid rgba(245, 166, 35, 0.3);
+            border-radius: 8px;
+            padding: 0.5rem 0.7rem;
+            margin-bottom: 0.6rem;
+            line-height: 1.4;
         }
 
         .stTabs [data-baseweb="tab-list"] { gap: 0.4rem; }
@@ -368,13 +372,14 @@ def render_feed_grid(results, columns_per_row=3):
                     unsafe_allow_html=True,
                 )
                 if r["label"] == "defective" and r["overlay"] is not None:
-                    with st.expander("🎯 View Grad-CAM"):
-                        st.image(r["overlay"], use_container_width=True)
+                    with st.expander("🧭 View AI Attention Map"):
                         st.markdown(
-                            '<div class="disclaimer">📍 Approximate region of interest — '
-                            'not a precise defect boundary.</div>',
+                            '<div class="disclaimer">⚠ This shows where the model was '
+                            'looking, not a confirmed defect location. The box can '
+                            'land near, but not exactly on, the visible flaw.</div>',
                             unsafe_allow_html=True,
                         )
+                        st.image(r["overlay"], use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
 
