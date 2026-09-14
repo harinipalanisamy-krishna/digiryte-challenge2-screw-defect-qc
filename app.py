@@ -55,7 +55,6 @@ if uploaded_files:
             "confidence": confidence
         })
 
-    # Summary stats
     total = len(results)
     defective_count = sum(1 for r in results if r["label"] == "defective")
     good_count = total - defective_count
@@ -76,13 +75,12 @@ if uploaded_files:
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            st.image(image, caption=uploaded_file.name, use_column_width=True)
+            st.image(image, caption=uploaded_file.name, use_container_width=True)
 
         with col2:
             if result["label"] == "defective":
                 st.error(f"⚠️ DEFECTIVE — {result['confidence']:.1f}% confidence")
 
-                # Grad-CAM + bounding box for defective predictions
                 overlay, grayscale_cam = get_gradcam_overlay(model, image)
                 bbox = get_defect_bounding_box(grayscale_cam)
 
@@ -91,13 +89,12 @@ if uploaded_files:
                     draw = ImageDraw.Draw(overlay_img)
                     draw.rectangle(bbox, outline="yellow", width=3)
 
-                st.image(overlay_img, caption="Grad-CAM: where the model looked (approx. defect region boxed)", use_column_width=True)
+                st.image(overlay_img, caption="Grad-CAM: where the model looked (approx. defect region boxed)", use_container_width=True)
             else:
                 st.success(f"✅ GOOD — {result['confidence']:.1f}% confidence")
 
         st.markdown("---")
 
-    # Downloadable report
     report_lines = [
         "SCREW DEFECT DETECTION - QC REPORT",
         f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
