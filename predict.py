@@ -12,7 +12,7 @@ from PIL import Image
 import numpy as np
 import gdown
 
-from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam import GradCAMPlusPlus
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
@@ -68,12 +68,36 @@ def get_gradcam_overlay(model, pil_image):
     """
     Returns a Grad-CAM heatmap overlay (numpy image array) showing which
     regions of the image most influenced the 'defective' prediction.
+
+    NOTE ON LAYER CHOICE: layer4[-1] on a 224x224 input only gives a 7x7
+    feature map, which produces coarse, blocky boxes that can only ever
+    land on one of a small grid of regions. layer3[-1] gives a 14x14 map,
+    which tracks smaller, more localized defects (scratches, thread damage)
+    noticeably better in practice.
+
+    NOTE ON CAM VARIANT: using GradCAM++ instead of vanilla GradCAM here.
+    Both read the same frozen, unmodified model - GradCAM++ just weights
+    the gradients differently (per-pixel importance weighting rather than
+    a single global weight per channel), which sometimes gives tighter,
+    less diffuse attention on the same underlying features. It cannot fix
+    attention that is genuinely on the wrong feature.
+
+    IMPORTANT CAVEAT (still applies regardless of layer/CAM choice): if
+    boxes land on background/head/shaft rather than the actual visible
+    defect, the most likely root cause is the model learning a
+    background/lighting shortcut rather than the defect itself - not a
+    localization-algorithm problem. Verify by running this function on
+    correctly-classified "good" images with ClassifierOutputTarget(0)
+    forced (already done automatically below) - if it lights up the same
+    generic regions there too, that confirms a shortcut, and no layer or
+    CAM-variant swap will fix it; only rebalancing/cropping the training
+    data will.
     """
     img_resized = pil_image.convert("RGB").resize((224, 224))
     input_tensor = transform(pil_image.convert("RGB")).unsqueeze(0).to(device)
 
-    target_layers = [model.layer4[-1]]
-    cam = GradCAM(model=model, target_layers=target_layers)
+    target_layers = [model.layer3[-1]]  # finer 14x14 grid vs layer4's 7x7
+    cam = GradCAMPlusPlus(model=model, target_layers=target_layers)
     targets = [ClassifierOutputTarget(0)]
     grayscale_cam = cam(input_tensor=input_tensor, targets=targets)[0]
 
@@ -82,7 +106,7 @@ def get_gradcam_overlay(model, pil_image):
     return visualization, grayscale_cam
 
 
-def get_defect_bounding_box(grayscale_cam, threshold=0.6, top_percentile=85, max_area_fraction=0.85):
+def get_defect_bounding_box(grayscale_cam, threshold=0.6, top_percentile=88, max_area_fraction=0.85):
     """
     Derives an approximate bounding box around the most-attended region
     of the Grad-CAM heatmap - a weakly-supervised localization technique.
@@ -94,6 +118,10 @@ def get_defect_bounding_box(grayscale_cam, threshold=0.6, top_percentile=85, max
       - Diffuse heatmaps (common with small training sets / subtle defects)
         don't fall back to an oversized box just because they never cross
         a fixed cutoff cleanly.
+
+    top_percentile nudged from 85 -> 88 to go with the finer layer3 map:
+    a finer grid means a tighter box is achievable, so the cutoff can
+    afford to be a bit stricter before it starts throwing away real signal.
 
     As a safety check, if the resulting box still covers most of the image
     (> max_area_fraction), localization is treated as unreliable and None
