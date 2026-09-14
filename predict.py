@@ -82,14 +82,43 @@ def get_gradcam_overlay(model, pil_image):
     return visualization, grayscale_cam
 
 
-def get_defect_bounding_box(grayscale_cam, threshold=0.6):
+def get_defect_bounding_box(grayscale_cam, threshold=0.6, top_percentile=85, max_area_fraction=0.85):
     """
     Derives an approximate bounding box around the most-attended region
     of the Grad-CAM heatmap - a weakly-supervised localization technique.
-    Returns (x_min, y_min, x_max, y_max) in the 224x224 image space, or None.
+
+    Uses an ADAPTIVE threshold: the effective cutoff is the higher of a
+    fixed floor (`threshold`) and a percentile-based cutoff computed from
+    this specific heatmap's own value distribution. This means:
+      - Sharp, concentrated heatmaps get a tight, accurate box.
+      - Diffuse heatmaps (common with small training sets / subtle defects)
+        don't fall back to an oversized box just because they never cross
+        a fixed cutoff cleanly.
+
+    As a safety check, if the resulting box still covers most of the image
+    (> max_area_fraction), localization is treated as unreliable and None
+    is returned rather than drawing a box that would mislead the viewer
+    into thinking the model pinpointed a specific defect location.
+
+    Returns (x_min, y_min, x_max, y_max) in the 224x224 image space, or None
+    if no reliable region could be determined.
     """
-    mask = grayscale_cam >= threshold
+    if grayscale_cam is None or grayscale_cam.size == 0:
+        return None
+
+    percentile_cutoff = np.percentile(grayscale_cam, top_percentile)
+    effective_threshold = max(threshold, percentile_cutoff)
+
+    mask = grayscale_cam >= effective_threshold
     if not mask.any():
         return None
+
     ys, xs = np.where(mask)
-    return int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+    x_min, y_min, x_max, y_max = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+
+    image_area = grayscale_cam.shape[0] * grayscale_cam.shape[1]
+    box_area = max(0, (x_max - x_min)) * max(0, (y_max - y_min))
+    if image_area > 0 and (box_area / image_area) > max_area_fraction:
+        return None
+
+    return x_min, y_min, x_max, y_max
