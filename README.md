@@ -62,10 +62,8 @@ This debugging arc — catching a data bug that a purely metrics-driven approach
 | Test accuracy | **~87%** |
 | Recall (defective class) | **~88%** (21/24 defects caught) |
 | Precision (defective class) | **0.68** |
-| ROC-AUC | *[fill in]* |
-| PR-AUC (Average Precision) | *[fill in]* |
 
-Full precision/recall breakdown across thresholds, confusion matrix, and ROC/PR curves are in the notebook (`confusion_matrix.png`, `gradcam_example.png`) and reproducible standalone via `evaluate.py`.
+Full precision/recall breakdown across thresholds, confusion matrix, and threshold-tuning analysis are in the notebook (`confusion_matrix.png`, `gradcam_example.png`).
 
 ## Architecture
 
@@ -85,14 +83,15 @@ Image upload / live camera capture (Streamlit)
                   └──► Adaptive-threshold bounding box ──► Overlay shown to operator
 ```
 
-## app.py (navigation)
-├── views/inspect.py → single-image detail cards
-└── views/dashboard.py → session-wide analytics + exports
-both import shared logic from common.py
-│
-▼
-predict.py (model-only, no UI code)
-
+```
+app.py (navigation)
+  ├── views/inspect.py    → single-image detail cards
+  └── views/dashboard.py  → session-wide analytics + exports
+         both import shared logic from common.py
+                                │
+                                ▼
+                          predict.py (model-only, no UI code)
+```
 
 `predict.py` holds all model/inference logic and has zero UI code; `common.py` holds shared styling and session-state helpers used by both pages — kept separate so inference logic could be reused in a different frontend (e.g. a FastAPI service) without touching it, and so the two pages never drift out of visual sync.
 
@@ -131,7 +130,7 @@ Stated explicitly, because a QC tool that hides its own failure modes is more da
 
 ## Tech Stack
 
-`PyTorch` · `torchvision` (ResNet18) · `pytorch-grad-cam` · `scikit-learn` (metrics, k-fold, ROC/PR curves) · `matplotlib` (evaluation plots) · `Streamlit` (multipage app + `st.camera_input`) · `PIL` · `gdown`
+`PyTorch` · `torchvision` (ResNet18) · `pytorch-grad-cam` · `scikit-learn` (metrics, k-fold) · `Streamlit` (multipage app + `st.camera_input`) · `PIL` · `gdown`
 
 ## Running Locally
 
@@ -140,28 +139,25 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The trained weights are downloaded automatically on first run via `gdown` (see `predict.py`). To run the standalone evaluation script:
-
-```bash
-python evaluate.py --test_dir path/to/dataset/test
-```
+The trained weights are downloaded automatically on first run via `gdown` (see `predict.py`).
 
 ## Project Structure
+
+```
 .
-├── app.py # Entry point: page config + navigation between the two pages
-├── common.py # Shared styling (dark theme) + session-state logic used by both pages
-├── predict.py # Inference logic (model load, predict, Grad-CAM) - no UI code
-├── evaluate.py # Standalone, read-only evaluation script (ROC-AUC, PR-AUC, confusion matrix)
+├── app.py                          # Entry point: page config + navigation between the two pages
+├── common.py                       # Shared styling (dark theme) + session-state logic used by both pages
+├── predict.py                      # Inference logic (model load, predict, Grad-CAM) - no UI code
 ├── views/
-│ ├── inspect.py # "Inspect" page - long-form single-image workflow
-│ └── dashboard.py # "Dashboard" page - session analytics, filters, exports
+│   ├── inspect.py                  # "Inspect" page - long-form single-image workflow
+│   └── dashboard.py                # "Dashboard" page - session analytics, filters, exports
 ├── requirements.txt
-├── sample_images/ # Example good/defective images for quick demoing
+├── sample_images/                  # Example good/defective images for quick demoing
 ├── confusion_matrix.png
 ├── gradcam_example.png
-├── Digiryte_Challenge2_ScrewQC_v2.ipynb # Full training & evaluation pipeline
+├── Digiryte_Challenge2_ScrewQC_v2.ipynb   # Full training & evaluation pipeline
 └── README.md
-
+```
 
 ---
 
