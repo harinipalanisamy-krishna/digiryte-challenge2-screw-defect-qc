@@ -73,9 +73,7 @@ if new_results:
         st.markdown(
             f"""
             <span class="badge {css_class}">{badge_label}</span>
-            <span style="font-family:'JetBrains Mono',monospace; margin-left:0.6rem; opacity:0.85;">
-                {r['confidence']:.1f}% confidence · {r['source']}
-            </span>
+            <span class="conf-text-inline {css_class}">{r['confidence']:.1f}% confidence · {r['source']}</span>
             """,
             unsafe_allow_html=True,
         )
