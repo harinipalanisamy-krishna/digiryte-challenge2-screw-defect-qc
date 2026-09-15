@@ -204,6 +204,31 @@ def inject_global_styles():
                 margin-top: 2.5rem;
                 letter-spacing: 0.04em;
             }}
+
+            /* --- Legibility fixes: Streamlit's own default text elements
+               render in a dim gray by default; force brighter, readable
+               colors everywhere in the main content area. --- */
+            .stMarkdown p, .stMarkdown li, .stMarkdown span,
+            div[data-testid="stMarkdownContainer"] p {{
+                color: {TEXT_PRIMARY} !important;
+            }}
+            label, .stRadio label, .stSlider label,
+            div[data-testid="stWidgetLabel"] label,
+            div[data-testid="stWidgetLabel"] p {{
+                color: {TEXT_PRIMARY} !important;
+                font-weight: 500;
+            }}
+            div[data-testid="stCaptionContainer"],
+            div[data-testid="stCaptionContainer"] p {{
+                color: #c7cad1 !important;
+            }}
+            div[data-testid="stFileUploaderDropzoneInstructions"] span,
+            div[data-testid="stFileUploaderDropzoneInstructions"] small {{
+                color: #c7cad1 !important;
+            }}
+            .stTabs [data-baseweb="tab"] p {{
+                color: inherit !important;
+            }}
         </style>
         """,
         unsafe_allow_html=True,
