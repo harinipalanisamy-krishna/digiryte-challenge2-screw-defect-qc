@@ -80,9 +80,7 @@ else:
                     st.markdown(
                         f"""
                         <span class="badge {css_class}">{badge_label}</span>
-                        <div style="margin-top:0.4rem; font-family:'JetBrains Mono',monospace;">
-                            {r['confidence']:.1f}% confidence
-                        </div>
+                        <div class="conf-text {css_class}">{r['confidence']:.1f}% confidence</div>
                         <div class="fname">{r['filename']} · {r['source']}</div>
                         """,
                         unsafe_allow_html=True,
