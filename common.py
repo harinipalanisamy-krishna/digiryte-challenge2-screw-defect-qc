@@ -121,8 +121,8 @@ def inject_global_styles():
             .feed-card.defective {{ border-left: 4px solid {BAD}; }}
             .feed-card .fname {{
                 font-family: 'JetBrains Mono', monospace;
-                font-size: 0.7rem;
-                color: {TEXT_SECONDARY};
+                font-size: 0.72rem;
+                color: #c7cad1;
                 margin-top: 0.4rem;
                 word-break: break-all;
             }}
@@ -229,6 +229,24 @@ def inject_global_styles():
             .stTabs [data-baseweb="tab"] p {{
                 color: inherit !important;
             }}
+
+            /* Bright, color-coded confidence text (not the dim default gray) */
+            .conf-text {{
+                font-family: 'JetBrains Mono', monospace;
+                font-weight: 700;
+                font-size: 1.02rem;
+                margin-top: 0.5rem;
+            }}
+            .conf-text.good {{ color: {GOOD}; }}
+            .conf-text.defective {{ color: {BAD}; }}
+
+            .conf-text-inline {{
+                font-family: 'JetBrains Mono', monospace;
+                font-weight: 700;
+                margin-left: 0.6rem;
+            }}
+            .conf-text-inline.good {{ color: {GOOD}; }}
+            .conf-text-inline.defective {{ color: {BAD}; }}
         </style>
         """,
         unsafe_allow_html=True,
