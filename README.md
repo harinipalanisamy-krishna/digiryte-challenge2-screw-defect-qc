@@ -83,4 +83,86 @@ Image upload / live camera capture (Streamlit)
         └──► Grad-CAM (layer4, vanilla GradCAM) ──► Heatmap
                   │
                   └──► Adaptive-threshold bounding box ──► Overlay shown to operator
+app.py (navigation)
+├── views/inspect.py → single-image detail cards
+└── views/dashboard.py → session-wide analytics + exports
+both import shared logic from common.py
+│
+▼
+predict.py (model-only, no UI code)
+
+
+`predict.py` holds all model/inference logic and has zero UI code; `common.py` holds shared styling and session-state helpers used by both pages — kept separate so inference logic could be reused in a different frontend (e.g. a FastAPI service) without touching it, and so the two pages never drift out of visual sync.
+
+## Real-World Deployment Considerations
+
+This app uses a single top-down camera image per screw — sufficient for a demo and for many visible defect types, but worth being explicit about where that falls short of an actual production line:
+
+- **Camera blind spots**: a single top-down view cannot see the underside of the screw head or the very tip of the threads. Any defect located there would simply never appear in the image the model receives, regardless of how accurate the model itself is.
+- **How real industrial systems solve this** (multiple camera/optical setups, not a software fix):
+  - **Glass rotary dial table** — screws travel across a clear, hardened glass conveyor; one camera shoots from above, a second shoots from directly underneath through the glass, capturing both the top and underside in one pass.
+  - **Mirrored prism enclosures** — the screw sits in a V-shaped slot surrounded by angled mirrors, letting a single overhead camera capture the top view plus reflected side/bottom views in one frame.
+  - **Rotational fixtures** — a mechanical gripper spins the screw 360° in front of a stationary camera, building a full panoramic wrap of the fastener for high-precision inspection.
+- **What this means for this project**: the current model and app are correctly scoped to what a single-image, single-camera setup can support. Extending to full-coverage inspection would be a hardware/imaging-rig decision made alongside the ML pipeline, not a model or code change — worth calling out explicitly as future scope rather than an oversight.
+
+## Known Limitations
+
+Stated explicitly, because a QC tool that hides its own failure modes is more dangerous than one that's upfront about them:
+
+- **Small test set** (24 defective examples): individual metrics have real variance — a couple of examples flipping outcome shifts recall by several points. K-fold results from tuning should be weighted more heavily than any single held-out split.
+- **Precision/recall tradeoff is deliberate, not accidental**: the default threshold accepts more false alarms in exchange for catching more real defects, which is the right prioritization for QC-assist — but it's a design choice a deployer should be able to tune, hence the sensitivity slider.
+- **Trained on studio-condition images**: MVTec's plain background and controlled lighting may not represent a real factory floor's camera setup; performance under different lighting/background/angle conditions is untested.
+- **Single product category**: evaluated only on "screw"; generalization to other MVTec categories or other product types entirely is unverified.
+- **No out-of-distribution detection**: the model only knows "good screw" vs. "defective screw" — it has no way to recognize an input that isn't a screw at all. Feeding it an unrelated object still forces a prediction into one of the two known classes. This is expected behavior for a binary classifier, not a bug, but it means the app currently assumes the operator is only ever submitting screw images.
+- **Approximate localization**: Grad-CAM bounding boxes are a weakly-supervised heuristic, not a precise segmentation. Both a finer feature layer and a sharper CAM variant (GradCAM++) were tested and neither changed the highlighted region, indicating the model's own learned attention — not the localization algorithm — is the limiting factor. MVTec's own pixel-level ground-truth masks (unused here) would give a stronger signal; see Future Work.
+
+## Future Work
+
+- **Unsupervised anomaly detection baseline** (PatchCore / PaDiM / EfficientAD) trained only on "good" images, as a direct comparison to the supervised approach — most relevant if labeled defects are scarce in a real deployment.
+- **Multi-class defect typing**, using MVTec's 5 labeled defect types instead of collapsing them into one "defective" class.
+- **Pixel-level defect segmentation** using MVTec's ground-truth masks, replacing the Grad-CAM bounding-box approximation — this is the most direct fix to the localization limitation above, since it would require retraining rather than just changing which layer/CAM variant reads out an already-frozen model.
+- **Out-of-distribution / input validation check** so the app can flag "this doesn't look like a screw" instead of forcing a good/defective label on unrelated images.
+- **Cross-category generalization testing** against other MVTec object categories.
+- **FastAPI inference service** separated from the Streamlit UI, for production-style integration.
+- **CI pipeline** (unit tests + lint) on every push.
+- **Experiment tracking** (Weights & Biases / MLflow) to replace the manual/printed tracking used across the baseline → augmentation → tuning → k-fold experiments.
+
+## Tech Stack
+
+`PyTorch` · `torchvision` (ResNet18) · `pytorch-grad-cam` · `scikit-learn` (metrics, k-fold, ROC/PR curves) · `matplotlib` (evaluation plots) · `Streamlit` (multipage app + `st.camera_input`) · `PIL` · `gdown`
+
+## Running Locally
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+The trained weights are downloaded automatically on first run via `gdown` (see `predict.py`). To run the standalone evaluation script:
+
+```bash
+python evaluate.py --test_dir path/to/dataset/test
+```
+
+## Project Structure
+
+.
+├── app.py # Entry point: page config + navigation between the two pages
+├── common.py # Shared styling (dark theme) + session-state logic used by both pages
+├── predict.py # Inference logic (model load, predict, Grad-CAM) - no UI code
+├── evaluate.py # Standalone, read-only evaluation script (ROC-AUC, PR-AUC, confusion matrix)
+├── views/
+│ ├── inspect.py # "Inspect" page - long-form single-image workflow
+│ └── dashboard.py # "Dashboard" page - session analytics, filters, exports
+├── requirements.txt
+├── sample_images/ # Example good/defective images for quick demoing
+├── confusion_matrix.png
+├── gradcam_example.png
+├── Digiryte_Challenge2_ScrewQC_v2.ipynb # Full training & evaluation pipeline
+└── README.md
+
+
+---
+
+*Dataset: [MVTec AD](https://www.mvtec.com/company/research/datasets/mvtec-ad), Bergmann et al., CVPR 2019 — used under its research/non-commercial license terms.*
 ```
