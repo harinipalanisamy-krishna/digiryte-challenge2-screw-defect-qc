@@ -84,3 +84,12 @@ Image upload / live camera capture (Streamlit)
                   │
                   └──► Adaptive-threshold bounding box ──► Overlay shown to operator
 
+
+
+app.py (navigation)
+├── views/inspect.py → single-image detail cards
+└── views/dashboard.py → session-wide analytics + exports
+both import shared logic from common.py
+│
+▼
+predict.py (model-only, no UI code)
