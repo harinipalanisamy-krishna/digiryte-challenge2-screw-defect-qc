@@ -5,3 +5,5 @@ Pillow
 numpy
 gdown
 grad-cam
+supabase
+bcrypt
