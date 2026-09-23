@@ -2,6 +2,9 @@
 views/dashboard.py - the "Dashboard" page: cumulative session analytics,
 filterable results grid, and export buttons. All numbers here are derived
 live from st.session_state.session_log - nothing is simulated.
+
+Visible only to supervisor/admin roles (enforced in app.py's navigation) -
+operators do not see this page in their sidebar at all.
 """
 
 import streamlit as st
