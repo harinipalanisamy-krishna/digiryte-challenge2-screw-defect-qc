@@ -15,6 +15,7 @@ import streamlit as st
 from PIL import Image, ImageDraw
 
 from predict import load_model, predict_image, get_gradcam_overlay, get_defect_bounding_box
+from db import log_inspection_to_db
 
 # ---------------------------------------------------------------------------
 # Theme: industry-standard dark dashboard.
@@ -271,6 +272,16 @@ def render_page_header(tag, title, subtitle):
 def render_sidebar():
     with st.sidebar:
         st.markdown("### 🔩 BoltGuard Console")
+        if "username" in st.session_state:
+            st.markdown(
+                f"**Signed in as:** `{st.session_state.username}` "
+                f"({st.session_state.get('role', 'operator')})"
+            )
+            if st.button("Log out", use_container_width=True):
+                for key in ("authenticated", "username", "role", "session_log"):
+                    st.session_state.pop(key, None)
+                st.rerun()
+            st.markdown("---")
         st.write("**Architecture:** ResNet18 (transfer learning)")
         st.write("**Test Accuracy:** ~87%")
         st.write("**Recall on defects:** ~88%")
@@ -284,6 +295,12 @@ def render_sidebar():
             step=0.05,
         )
         st.caption(f"Current threshold: {st.session_state.threshold}")
+
+
+def is_supervisor_or_admin() -> bool:
+    """Authorization check used to gate sensitive actions (reset, exports,
+    all-time history) to supervisor/admin roles only."""
+    return st.session_state.get("role") in ("supervisor", "admin")
 
 
 @st.cache_resource
@@ -344,6 +361,17 @@ def process_and_log(image_bytes, filename, threshold, source):
         "overlay": overlay_img,
     }
     st.session_state.session_log.append(result)
+
+    # Persist to the permanent database log (separate from this in-memory
+    # session list, which only lasts until the browser tab closes).
+    log_inspection_to_db(
+        username=st.session_state.get("username", "unknown"),
+        filename=filename,
+        label=label,
+        confidence=confidence,
+        threshold_used=threshold,
+    )
+
     return result
 
 
