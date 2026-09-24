@@ -197,6 +197,22 @@ def inject_global_styles():
                 border-radius: 10px;
             }}
 
+            /* Sidebar buttons (like Log out) were invisible - white bg,
+               white text. Force visible contrast. */
+            section[data-testid="stSidebar"] button {{
+                background-color: rgba(255,255,255,0.08) !important;
+                color: {TEXT_PRIMARY} !important;
+                border: 1px solid rgba(255,255,255,0.18) !important;
+            }}
+            section[data-testid="stSidebar"] button:hover {{
+                background-color: rgba(255,255,255,0.16) !important;
+                border-color: {ACCENT} !important;
+                color: {ACCENT} !important;
+            }}
+            section[data-testid="stSidebar"] button p {{
+                color: inherit !important;
+            }}
+
             .footer-tag {{
                 text-align: center;
                 font-family: 'JetBrains Mono', monospace;
