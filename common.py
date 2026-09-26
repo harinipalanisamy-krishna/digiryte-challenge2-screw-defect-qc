@@ -10,12 +10,23 @@ import datetime
 import hashlib
 import io
 import csv
+import logging
 
 import streamlit as st
 from PIL import Image, ImageDraw
 
 from predict import load_model, predict_image, get_gradcam_overlay, get_defect_bounding_box
 from db import log_inspection_to_db
+
+# ---------------------------------------------------------------------------
+# Logging: basic observability. Writes to console, which Docker captures
+# automatically — view anytime with `docker logs <container_name>`.
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("boltguard")
 
 # ---------------------------------------------------------------------------
 # Theme: industry-standard dark dashboard.
@@ -294,6 +305,7 @@ def render_sidebar():
                 f"({st.session_state.get('role', 'operator')})"
             )
             if st.button("Log out", use_container_width=True):
+                logger.info(f"User logged out: username={st.session_state.username}")
                 for key in ("authenticated", "username", "role", "session_log"):
                     st.session_state.pop(key, None)
                 st.rerun()
@@ -321,6 +333,7 @@ def is_supervisor_or_admin() -> bool:
 
 @st.cache_resource
 def get_model():
+    logger.info("Loading model into memory (cached resource)")
     return load_model()
 
 
@@ -378,15 +391,25 @@ def process_and_log(image_bytes, filename, threshold, source):
     }
     st.session_state.session_log.append(result)
 
+    username = st.session_state.get("username", "unknown")
+
+    logger.info(
+        f"Inspection result: user={username}, filename={filename}, "
+        f"label={label}, confidence={confidence:.1f}%, threshold={threshold}, source={source}"
+    )
+
     # Persist to the permanent database log (separate from this in-memory
     # session list, which only lasts until the browser tab closes).
-    log_inspection_to_db(
-        username=st.session_state.get("username", "unknown"),
-        filename=filename,
-        label=label,
-        confidence=confidence,
-        threshold_used=threshold,
-    )
+    try:
+        log_inspection_to_db(
+            username=username,
+            filename=filename,
+            label=label,
+            confidence=confidence,
+            threshold_used=threshold,
+        )
+    except Exception as e:
+        logger.error(f"Failed to log inspection to database: user={username}, filename={filename}, error={e}")
 
     return result
 
